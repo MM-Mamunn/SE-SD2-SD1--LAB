@@ -1,35 +1,32 @@
-# 4. Services Layer & `/api/student/details` Endpoint
+# Separating Database Logic with a Service Layer
 
-## What we did
+A service layer keeps database operations separate from HTTP request handling. In this example, an Express route directs a request to a controller, and the controller calls a service to retrieve student records from PostgreSQL.
 
-We completed the `/api/student/details` endpoint.  
-It fetches **all rows** from `test_table` in the database and sends them back as JSON.
+## What you will learn
 
-We also created a new **services** folder to keep database logic separate from controllers.
+- How a service, controller, and route divide responsibility.
+- How the `GET /api/student/details` endpoint retrieves and returns rows from `test_table`.
+- How to call the endpoint and understand its response.
 
----
+## Request flow
 
-## Folder Structure (new stuff marked with ✅)
-
+```text
+GET /api/student/details
+        ↓
+Express mounts the student router at /api/student
+        ↓
+The router matches /details and calls detailsFunction
+        ↓
+The controller calls getAllStudents
+        ↓
+The service queries PostgreSQL
+        ↓
+The controller sends the rows back as JSON
 ```
-project/
-├── controllers/
-│   └── student.controller.js   (updated ✅)
-├── services/                   (new folder ✅)
-│   └── student.service.js      (new file ✅)
-├── routes/
-│   └── student.route.js        (updated ✅)
-├── db.js
-└── index.js
-```
 
----
+## 1. Put the database query in a service
 
-## How it works (step by step)
-
-### Step 1 — Service (talks to the database)
-
-📄 `services/student.service.js`
+The service module, `services/student.service.js`, imports the PostgreSQL connection pool from `db.js` and runs the query:
 
 ```js
 import pool from "../db.js";
@@ -40,17 +37,15 @@ export const getAllStudents = async () => {
 };
 ```
 
-- We import the `pool` (database connection) from `db.js`.
-- We run a raw SQL query: `SELECT * FROM test_table`.
-- We return the rows.
+`pool.query()` executes the SQL statement. The PostgreSQL client returns a result object, and `result.rows` contains the records selected from `test_table`. Keeping this query in a service makes the database operation reusable and prevents the controller from needing to know how the query is performed.
 
----
+## 2. Call the service from a controller
 
-### Step 2 — Controller (handles request & response)
-
-📄 `controllers/student.controller.js`
+The controller imports the service function and uses it to handle the request:
 
 ```js
+import { getAllStudents } from "../services/student.service.js";
+
 const detailsFunction = async (req, res) => {
   try {
     const data = await getAllStudents();
@@ -62,43 +57,121 @@ const detailsFunction = async (req, res) => {
 };
 ```
 
-- Calls the service function.
-- If it works → sends the data back with status `200`.
-- If it fails → catches the error and sends status `500`.
+The controller's responsibility is to coordinate the request and response:
 
----
+- It awaits `getAllStudents()` to receive the rows from the service.
+- On success, it responds with HTTP `200` and a JSON object containing `data`.
+- If the query throws an error, it logs the error and responds with HTTP `500`.
 
-### Step 3 — Route (connects URL to controller)
+The response has this shape; the contents of `data` depend on the rows in the database:
 
-📄 `routes/student.route.js`
+```json
+{
+  "data": [
+    {
+      "column_name": "value"
+    }
+  ]
+}
+```
+
+## 3. Connect the route to the controller
+
+In `routes/student.route.js`, the `/details` route is associated with `detailsFunction`:
 
 ```js
+import express from "express";
+import { profileFunction, detailsFunction } from "../controllers/student.controller.js";
+
+const router = express.Router();
+
+router.get("/profile", profileFunction);
 router.get("/details", detailsFunction);
+
+export default router;
 ```
 
-- When someone visits `/api/student/details`, it calls `detailsFunction`.
+The route path is `/details` relative to this router. In `index.js`, the router is mounted with:
 
----
-
-## The flow
-
-```
-Browser/Postman hits GET /api/student/details
-        ↓
-   Route → calls detailsFunction (controller)
-        ↓
-   Controller → calls getAllStudents (service)
-        ↓
-   Service → runs "SELECT * FROM test_table" (database)
-        ↓
-   Data goes back up: Service → Controller → Response
+```js
+app.use("/api/student", studentRoutes);
 ```
 
----
+Express combines the mount path and route path, so the complete endpoint is `GET /api/student/details`. The same router also defines `GET /api/student/profile`.
 
-## Try it
+## 4. Configure the database connection
 
-1. Make sure your database has a table called `test_table` with some data.
-2. Run the server: `npm run dev`
-3. Open browser or Postman: `http://localhost:3000/api/student/details`
-4. You should see all rows from `test_table` as JSON.
+The connection pool in `db.js` reads its PostgreSQL connection string from the `DATABASE_URL` environment variable. Set that variable in a local `.env` file:
+
+```env
+DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<database>
+```
+
+Keep the real connection string private, and do not commit `.env` to version control. The project loads environment variables with `dotenv` and uses the `pg` package to create the connection pool.
+
+The application calls `checkDBConnection()` when it starts. This logs whether it could connect to PostgreSQL. For the details endpoint to return records successfully, the database must be reachable and contain a `test_table` table. The service runs `SELECT * FROM test_table`, so the table's column structure determines the fields returned.
+
+## 5. Create and populate `test_table`
+
+Create `test_table` manually in your PostgreSQL database before calling the endpoint. For example, run this SQL in the Supabase SQL Editor or another PostgreSQL client:
+
+```sql
+CREATE TABLE test_table (
+  id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  name varchar,
+  cgpa real,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  password text
+);
+```
+
+The columns are:
+
+| Column | PostgreSQL type | Nullable | Default |
+|---|---|---|---|
+| `id` | `bigint` | No | Identity-generated |
+| `name` | `varchar` | Yes | `NULL` |
+| `cgpa` | `real` | Yes | `NULL` |
+| `created_at` | `timestamptz` | No | `now()` |
+| `password` | `text` | Yes | `NULL` |
+
+Add a couple of sample rows. The `id` values are generated automatically, so this insert assumes the table is new and its identity sequence starts at `1`:
+
+```sql
+INSERT INTO test_table (name, cgpa, created_at, password)
+VALUES
+  ('Alice', 3.5, '2026-10-15 04:04:14.530301+00', '123'),
+  ('Bob', 3.3, '2026-10-15 04:04:28.142307+00', '1234');
+```
+
+The rows should look like this:
+
+| id | name | cgpa | created_at | password |
+|---:|---|---:|---|---|
+| 1 | Alice | 3.5 | 2026-10-15 04:04:14.530301+00 | 123 |
+| 2 | Bob | 3.3 | 2026-10-15 04:04:28.142307+00 | 1234 |
+
+These passwords are sample values for learning only. Never store real user passwords as plain text; hash passwords with a suitable password-hashing algorithm before storing them.
+
+## 6. Run and call the endpoint
+
+From the `4 services layer` project directory, start the server:
+
+```bash
+npm run dev
+```
+
+Then send a GET request:
+
+```bash
+curl http://localhost:3000/api/student/details
+```
+
+When the database connection and query succeed, the response contains all rows returned by `SELECT * FROM test_table` in the `data` property. If the query fails, the controller returns HTTP `500` with `Server error`.
+
+## Summary
+
+- **Routes** map HTTP methods and paths to controller functions.
+- **Controllers** handle requests, call services, and create HTTP responses.
+- **Services** encapsulate operations such as database queries.
+- **The details endpoint** uses this separation to retrieve rows from PostgreSQL and return them as JSON.

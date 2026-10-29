@@ -6,7 +6,7 @@ This guide explains how to organize an Express.js backend using **routes** and *
 
 Create a `routes` directory to group related URLs into separate files.
 
-For example:
+The current project has a `student.route.js` file for student routes. In a larger project, you could add separate route files for other resources.
 
 - `student.route.js` contains routes related to students.
 - `teacher.route.js` contains routes related to teachers.
@@ -30,14 +30,14 @@ export default router;
 What the code does:
 
 - `express.Router()` creates a router for this group of routes.
-- `router.get("/profile", profileFunction)` connects a GET request to `/profile` with the `profileFunction` controller.
+- `router.get("/profile", profileFunction)` connects a GET request to `/profile` with the `profileFunction` controller. This is the route currently implemented in this project.
 - `export default router` lets `index.js` import and use this router.
 
 ## 2. Controllers directory
 
 Create a `controllers` directory to group the logic that handles requests.
 
-For example:
+The current project has a `student.controller.js` file. In a larger project, you could add separate controllers for other resources.
 
 - `student.controller.js` contains logic related to student requests.
 - `teacher.controller.js` contains logic related to teacher requests.
@@ -70,7 +70,7 @@ What the code does:
 
 ## 3. Connect the route in `index.js`
 
-Import the router and mount it with `app.use()`:
+The current `index.js` imports the student router and mounts it at `/api/student`:
 
 ```javascript
 import express from "express";
@@ -80,20 +80,38 @@ const app = express();
 const port = 3000;
 
 app.use(express.json());
-app.use("/students", studentRoutes);
+app.use("/api/student", studentRoutes);
+
+app.get("/", (req, res) => {
+  res.send("Hello World!!");
+});
 
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`Example app listening on port ${port}`);
 });
 ```
 
-Because the router has the path `/profile` and is mounted at `/students`, the full endpoint is:
+Express combines the mount path (`/api/student`) with the router path (`/profile`). The implemented profile endpoint is:
 
 ```text
-GET http://localhost:3000/students/profile
+GET http://localhost:3000/api/student/profile
 ```
 
-The `app.use("/students", studentRoutes)` line adds `/students` in front of the paths defined in `student.route.js`.
+Call it with:
+
+```sh
+curl http://localhost:3000/api/student/profile
+```
+
+The controller currently returns this JSON response:
+
+```json
+{
+  "message": "Name: XYZ, ID: 12345, Course: ABC"
+}
+```
+
+The app also has a separate root endpoint, `GET http://localhost:3000/`, which responds with `Hello World!!`.
 
 ## 4. Common HTTP methods
 
@@ -107,7 +125,7 @@ HTTP methods describe what the client wants the server to do. These are their co
 | `PATCH` | Update part of an existing resource. | Change only a student's course. |
 | `DELETE` | Delete a resource. | Delete a student record. |
 
-### Basic route examples
+### Basic route examples (not implemented in this project)
 
 ```javascript
 router.get("/students", getStudents);
@@ -117,7 +135,7 @@ router.patch("/students/:id", updateStudent);
 router.delete("/students/:id", deleteStudent);
 ```
 
-These examples show the pattern. Each function (`getStudents`, `createStudent`, and so on) must be defined and imported from your controller. The `:id` part is a URL parameter that can be read using `req.params.id`.
+These are illustrative patterns only; the current project implements only `GET /api/student/profile` (plus the root `GET /`). To add one of these routes, define and import its controller function. The `:id` part is a URL parameter that can be read using `req.params.id`.
 
 ## 5. Why use `app.use(express.json())`?
 
@@ -127,7 +145,7 @@ app.use(express.json());
 
 This middleware tells Express to parse incoming JSON request bodies. The parsed data becomes available in `req.body`.
 
-For example, a client might send this JSON when creating a student:
+For example, a future create-student endpoint might accept this JSON request body:
 
 ```json
 {
@@ -137,7 +155,7 @@ For example, a client might send this JSON when creating a student:
 }
 ```
 
-A controller can then read the values:
+A controller for that hypothetical endpoint could then read the values:
 
 ```javascript
 const createStudent = (req, res) => {

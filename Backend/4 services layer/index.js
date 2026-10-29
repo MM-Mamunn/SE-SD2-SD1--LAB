@@ -2,7 +2,7 @@ import express from 'express';
 import studentRoutes from './routes/student.route.js';
 import { checkDBConnection } from "./db.js";
 
-checkDBConnection();
+// checkDBConnection();
 
 const app = express();
 const port = 3000;
